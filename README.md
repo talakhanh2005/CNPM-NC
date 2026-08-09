@@ -189,6 +189,7 @@ OpenEmotion uses the **FER-2013** dataset.
 
 The dataset is **not included in this GitHub repository**.
 
+https://www.kaggle.com/datasets/msambare/fer2013
 Download the FER-2013 dataset from a legitimate source and arrange it in the following structure:
 
 ```text
