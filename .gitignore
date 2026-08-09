@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Secrets / local configuration
+.env
+.env.*
+
+# ML artifacts
+*.pth
+*.pt
+*.onnx
+*.ckpt
+
+# Data
+data/
+datasets/
+
+# Generated output
+outputs/
+logs/
