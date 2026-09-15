@@ -1,0 +1,14 @@
+LICENSE
+README.md
+pyproject.toml
+src/openemotion/__init__.py
+src/openemotion/config.py
+src/openemotion/face_detector.py
+src/openemotion/inference.py
+src/openemotion/model.py
+src/openemotion/preprocessing.py
+src/openemotion.egg-info/PKG-INFO
+src/openemotion.egg-info/SOURCES.txt
+src/openemotion.egg-info/dependency_links.txt
+src/openemotion.egg-info/top_level.txt
+tests/test_inference.py

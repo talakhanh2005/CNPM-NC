@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", required=True, help="FER-2013 root directory")
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--output", default="models/openemotion_efficientnet_b0.pth")
     args = parser.parse_args()
 
@@ -37,11 +37,15 @@ def main():
         dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=2,
-        pin_memory=torch.cuda.is_available(),
+        num_workers=0,
+        pin_memory=False,
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda" if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available()
+        else "cpu"
+    )
     model = create_model(len(CLASS_NAMES)).to(device)
 
     criterion = nn.CrossEntropyLoss()

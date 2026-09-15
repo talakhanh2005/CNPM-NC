@@ -34,6 +34,7 @@ env/
 # Data
 data/
 datasets/
+/fer2013
 
 # Generated output
 outputs/
