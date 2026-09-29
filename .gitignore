@@ -24,6 +24,7 @@ env/
 # Secrets / local configuration
 .env
 .env.*
+!.env.example
 
 # ML artifacts
 *.pth

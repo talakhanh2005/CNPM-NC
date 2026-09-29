@@ -1,5 +1,7 @@
 import base64
-from typing import List, Dict, Any
+from threading import RLock
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
 import torch
@@ -11,10 +13,11 @@ from openemotion.model.inference import predict_emotion
 class RealtimeProcessor:
     """Xử lý cảm xúc theo thời gian thực (nhận batch frame từ Backend)."""
 
-    def __init__(self, model: torch.nn.Module, detector: FaceDetector, device: torch.device):
+    def __init__(self, model: torch.nn.Module, detector: FaceDetector, device: torch.device, inference_lock=None):
         self.model = model
         self.detector = detector
         self.device = device
+        self.inference_lock = inference_lock or RLock()
 
     def decode_base64_image(self, base64_str: str) -> np.ndarray | None:
         """Decode base64 string to OpenCV BGR image."""
@@ -29,6 +32,10 @@ class RealtimeProcessor:
             return None
 
     def process_frame(self, frame_data: Dict[str, Any]) -> Dict[str, Any]:
+        with self.inference_lock:
+            return self._process_frame(frame_data)
+
+    def _process_frame(self, frame_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Xử lý 1 frame trong batch.
         Input frame_data: {"frame_id": 101, "timestamp": 12.4, "image": "<base64>"}
@@ -37,7 +44,7 @@ class RealtimeProcessor:
         timestamp = frame_data.get("timestamp", 0.0)
         image_input = frame_data.get("image")
 
-        if not image_input:
+        if image_input is None:
             return {
                 "frame_id": frame_id,
                 "timestamp": timestamp,
@@ -93,6 +100,7 @@ class RealtimeProcessor:
             "timestamp": timestamp,
             "status": "ok",
             "face": {
+                "face_id": largest_face["face_id"],
                 "bbox": [x, y, w, h],
                 "emotion": emotion,
                 "confidence": round(confidence, 4),

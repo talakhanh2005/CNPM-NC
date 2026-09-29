@@ -6,6 +6,12 @@ OpenEmotion is a deep-learning project that detects faces from images or a live 
 
 > **Status:** 🚧 Active development
 
+## Classroom backend API
+
+The HTTP service now implements the backend's `/v1/analyze/frame` and
+`/v1/analyze/video` contracts, including authentication, label mapping, signed
+video downloads and durable idempotency. See [backend integration and run instructions](docs/backend-integration.md).
+
 ## Demo
 
 OpenEmotion can process a live camera feed using OpenCV:
@@ -560,9 +566,9 @@ The predicted class should be considered a **model prediction**, not a definitiv
 * [ ] Multi-face tracking
 * [ ] FPS optimization
 * [ ] Image inference CLI
-* [ ] Video inference
+* [x] Video inference
 * [ ] ONNX export
-* [ ] FastAPI inference API
+* [x] FastAPI inference API
 * [ ] React web application
 * [ ] Docker support
 * [ ] CI/CD

@@ -1,7 +1,4 @@
 import base64
-import json
-import tempfile
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -9,9 +6,9 @@ import pytest
 import torch
 
 from openemotion.analysis.emotion_analyzer import EmotionAnalyzer
-from openemotion.config import CLASS_NAMES, IMG_SIZE
+from openemotion.config import CLASS_NAMES
 from openemotion.detection.face_detector import FaceDetector, create_face_detector
-from openemotion.model.emotion_model import create_model, load_model
+from openemotion.model.emotion_model import create_model
 from openemotion.model.inference import predict_emotion
 from openemotion.realtime.realtime_processor import RealtimeProcessor
 from openemotion.service.ai_service import AIService
@@ -157,10 +154,12 @@ def test_ai_service_missing_model():
 
 
 def test_ai_service_with_real_model():
-    model_path = Path(__file__).resolve().parents[1] / "models" / "openemotion_efficientnet_b0.pth"
-    if model_path.exists():
-        service = AIService(model_path=str(model_path), device="cpu")
-        res = service.process_realtime_batch("test_session", [])
-        assert res["session_id"] == "test_session"
-        assert res["results"] == []
+    from openemotion.config import DEFAULT_MODEL_PATH
+
+    if not DEFAULT_MODEL_PATH.exists():
+        pytest.skip("Trained model weights are not present")
+    service = AIService(model_path=str(DEFAULT_MODEL_PATH), device="cpu")
+    res = service.process_realtime_batch("test_session", [])
+    assert res["session_id"] == "test_session"
+    assert res["results"] == []
 

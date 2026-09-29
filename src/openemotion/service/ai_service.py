@@ -1,12 +1,16 @@
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Union
+from threading import RLock
+from typing import Any, Dict, List, Union
+
 import cv2
 import numpy as np
 import torch
 
 from openemotion.analysis.emotion_analyzer import EmotionAnalyzer
+from openemotion.api.adapter import batch_result, frame_result
 from openemotion.config import CLASS_NAMES
-from openemotion.detection.face_detector import create_face_detector, FaceDetector
+from openemotion.detection.face_detector import create_face_detector
 from openemotion.model.emotion_model import load_model
 from openemotion.model.inference import predict_emotion
 from openemotion.realtime.realtime_processor import RealtimeProcessor
@@ -39,8 +43,24 @@ class AIService:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Face Detector: {str(e)}") from e
 
-        self.realtime_processor = RealtimeProcessor(self.model, self.detector, self.device)
-        self.video_processor = VideoProcessor(self.model, self.detector, self.device)
+        # Serialize individual detector/model operations while allowing realtime
+        # requests to run between sampled video frames.
+        inference_lock = RLock()
+        self.realtime_processor = RealtimeProcessor(self.model, self.detector, self.device, inference_lock)
+        self.video_processor = VideoProcessor(self.model, self.detector, self.device, inference_lock)
+
+    def analyze_frame(self, frame: bytes, frame_id: str, timestamp: datetime):
+        image = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
+        raw = self.realtime_processor.process_frame({
+            "frame_id": frame_id, "timestamp": timestamp, "image": image,
+        })
+        return frame_result(raw, frame_id, timestamp)
+
+    def analyze_video(self, video_path: str, duration: float, deadline: float | None = None):
+        raw = self.video_processor.process_video(video_path, deadline=deadline)
+        if raw.get("status") != "completed":
+            raise ValueError("Video could not be decoded or analyzed")
+        return batch_result(raw["raw_results"], duration)
 
     def process_realtime_batch(self, session_id: str, frames: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Interface Realtime: Nhận batch frame từ Backend và trả về kết quả cảm xúc."""
