@@ -7,17 +7,26 @@ import numpy as np
 import torch
 
 from openemotion.detection.face_detector import FaceDetector
+from openemotion.config import LOW_EMOTION_CONFIDENCE
 from openemotion.model.inference import predict_emotion
 
 
 class RealtimeProcessor:
     """Xử lý cảm xúc theo thời gian thực (nhận batch frame từ Backend)."""
 
-    def __init__(self, model: torch.nn.Module, detector: FaceDetector, device: torch.device, inference_lock=None):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        detector: FaceDetector,
+        device: torch.device,
+        inference_lock=None,
+        low_confidence_threshold: float = LOW_EMOTION_CONFIDENCE,
+    ):
         self.model = model
         self.detector = detector
         self.device = device
         self.inference_lock = inference_lock or RLock()
+        self.low_confidence_threshold = low_confidence_threshold
 
     def decode_base64_image(self, base64_str: str) -> np.ndarray | None:
         """Decode base64 string to OpenCV BGR image."""
@@ -93,7 +102,7 @@ class RealtimeProcessor:
             }
 
         emotion, confidence, probs = predict_emotion(self.model, face_crop, self.device)
-        uncertain = confidence < 0.4
+        uncertain = confidence < self.low_confidence_threshold
 
         return {
             "frame_id": frame_id,

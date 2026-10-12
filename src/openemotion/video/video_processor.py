@@ -25,11 +25,13 @@ class VideoProcessor:
         detector: FaceDetector,
         device: torch.device,
         inference_lock=None,
+        low_confidence_threshold: float = LOW_EMOTION_CONFIDENCE,
     ):
         self.model = model
         self.detector = detector
         self.device = device
         self.inference_lock = inference_lock or RLock()
+        self.low_confidence_threshold = low_confidence_threshold
 
     def process_video(
         self,
@@ -131,7 +133,7 @@ class VideoProcessor:
                     "probabilities": {
                         key: round(value, 4) for key, value in probabilities.items()
                     },
-                    "uncertain": confidence < LOW_EMOTION_CONFIDENCE,
+                    "uncertain": confidence < self.low_confidence_threshold,
                 }
             )
         return results

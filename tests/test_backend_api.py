@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 import time
+import base64
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -133,6 +134,26 @@ def send_video(client, key="job-1", **fields):
     )
 
 
+def send_frames(client, jpeg, **fields):
+    return client.post(
+        "/v1/analyze/frames",
+        headers=AUTH,
+        json={
+            "session_id": "meeting-1",
+            "frames": [
+                {
+                    "frame_id": "f-1",
+                    "timestamp": STAMP,
+                    "image": base64.b64encode(jpeg).decode("ascii"),
+                    "content_type": "image/jpeg",
+                    "student_id": "student-1",
+                    **fields,
+                }
+            ],
+        },
+    )
+
+
 @pytest.mark.parametrize(
     "model_label,backend_label",
     [("disgust", "disgusted"), ("fear", "fearful"), ("surprise", "surprised")],
@@ -162,6 +183,23 @@ def test_no_face_is_successful_detection_failure(api, jpeg, service):
     assert result["failure_reason"] == "no_face"
     assert result["confidence"] == 0 and result["face_id"] is None
     assert result["probabilities"] == dict.fromkeys(EMOTIONS, 0)
+
+
+def test_batch_frames_preserve_student_mapping(api, jpeg):
+    response = send_frames(api.client, jpeg)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["session_id"] == "meeting-1"
+    assert result["results"][0]["student_id"] == "student-1"
+    frame = result["results"][0]["result"]
+    assert frame["frame_id"] == "f-1"
+    assert frame["emotion"] == "surprised"
+    assert set(frame["probabilities"]) == set(EMOTIONS)
+
+
+def test_batch_frames_validate_payload(api, jpeg):
+    assert send_frames(api.client, jpeg, image="not-base64").status_code == 422
+    assert send_frames(api.client, jpeg, timestamp="2026-09-29T00:00:00").status_code == 422
 
 
 def test_invalid_frames_and_timestamps(api, jpeg):

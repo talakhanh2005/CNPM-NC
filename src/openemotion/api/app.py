@@ -1,3 +1,5 @@
+import base64
+import binascii
 import logging
 import secrets
 import time
@@ -31,11 +33,40 @@ class VideoRequest(BaseModel):
     duration: float = Field(ge=0, allow_inf_nan=False)
 
 
+class FrameBatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    frame_id: str = Field(min_length=1, max_length=64)
+    timestamp: datetime
+    image: str = Field(min_length=1, max_length=1024 * 1024, repr=False)
+    content_type: str = Field(default="image/jpeg", pattern=r"^image/(jpeg|png)$")
+    student_id: str | None = Field(default=None, max_length=36)
+
+
+class FrameBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str = Field(min_length=1, max_length=128)
+    frames: list[FrameBatchItem] = Field(min_length=1, max_length=64)
+
+
+class FrameBatchEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    student_id: str | None = None
+    result: FrameResult
+
+
+class FrameBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str
+    results: list[FrameBatchEntry]
+
+
 class BodyLimitMiddleware:
     """Limit multipart/JSON before the framework buffers/parses an upload."""
 
-    def __init__(self, app, max_bytes):
-        self.app, self.max_bytes = app, max_bytes
+    def __init__(self, app, max_frame_bytes, max_batch_bytes):
+        self.app = app
+        self.max_frame_bytes = max_frame_bytes
+        self.max_batch_bytes = max_batch_bytes
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -46,7 +77,12 @@ class BodyLimitMiddleware:
             if message["type"] == "http.disconnect":
                 return
             body.extend(message.get("body", b""))
-            if len(body) > self.max_bytes:
+            max_bytes = (
+                self.max_batch_bytes
+                if scope.get("path") == "/v1/analyze/frames"
+                else self.max_frame_bytes
+            )
+            if len(body) > max_bytes:
                 response = JSONResponse(
                     {"detail": "Request body exceeds limit"}, status_code=413
                 )
@@ -80,6 +116,18 @@ def validate_image(data: bytes, content_type: str):
         ) from None
 
 
+def decode_frame_payload(frame: FrameBatchItem, max_bytes: int) -> bytes:
+    payload = frame.image.split(",", 1)[1] if "," in frame.image else frame.image
+    try:
+        data = base64.b64decode(payload, validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(422, "Invalid base64 frame") from None
+    if len(data) > max_bytes:
+        raise HTTPException(413, "Frame exceeds byte limit")
+    validate_image(data, frame.content_type)
+    return data
+
+
 def create_app(settings=None, service=None, downloader=None):
     settings = settings or APISettings()
     # httpx INFO messages include signed URLs; do not emit those request logs.
@@ -92,7 +140,10 @@ def create_app(settings=None, service=None, downloader=None):
             from openemotion.service.ai_service import AIService
 
             app.state.ai = await run_in_threadpool(
-                AIService, str(settings.model_path), settings.device
+                AIService,
+                str(settings.model_path),
+                settings.device,
+                settings.low_confidence_threshold,
             )
         else:
             app.state.ai = service
@@ -102,7 +153,9 @@ def create_app(settings=None, service=None, downloader=None):
 
     app = FastAPI(title="OpenEmotion Backend API", version="1.0.0", lifespan=lifespan)
     app.add_middleware(
-        BodyLimitMiddleware, max_bytes=settings.max_frame_bytes + 64 * 1024
+        BodyLimitMiddleware,
+        max_frame_bytes=settings.max_frame_bytes + 64 * 1024,
+        max_batch_bytes=(settings.max_frame_bytes + 16 * 1024) * 64,
     )
 
     @app.exception_handler(RequestValidationError)
@@ -157,6 +210,31 @@ def create_app(settings=None, service=None, downloader=None):
         except Exception as exc:  # noqa: BLE001 - redact native/model errors at the HTTP boundary
             logger.warning("Frame inference failed (%s)", type(exc).__name__)
             raise HTTPException(500, "Frame inference failed") from None
+
+    @app.post(
+        "/v1/analyze/frames",
+        response_model=FrameBatchResponse,
+        dependencies=[Depends(authorize)],
+    )
+    def analyze_frames(data: FrameBatchRequest):
+        frames = []
+        for item in data.frames:
+            if item.timestamp.tzinfo is None or item.timestamp.utcoffset() is None:
+                raise HTTPException(422, "timestamp must include timezone")
+            frames.append(
+                {
+                    "frame_id": item.frame_id,
+                    "timestamp": item.timestamp,
+                    "image": decode_frame_payload(item, settings.max_frame_bytes),
+                    "student_id": item.student_id,
+                }
+            )
+        try:
+            results = app.state.ai.analyze_frame_batch(frames)
+            return {"session_id": data.session_id, "results": results}
+        except Exception as exc:  # noqa: BLE001 - redact model/native details
+            logger.warning("Batch frame inference failed (%s)", type(exc).__name__)
+            raise HTTPException(500, "Batch frame inference failed") from None
 
     @app.post(
         "/v1/analyze/video",

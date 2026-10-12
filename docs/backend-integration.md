@@ -58,6 +58,12 @@ yêu cầu `Authorization: Bearer <AI_API_KEY>`.
   danh tính hay ID theo dõi xuyên các frame. Student/meeting do backend xác định.
 - Giới hạn mặc định 512 KiB và 1920×1080 pixel. Frame chỉ nằm trong RAM.
 
+`POST /v1/analyze/frames` là biến thể batch JSON cho nhiều frame realtime. Mỗi
+item có `frame_id`, `timestamp`, `image` base64, `content_type` và `student_id`
+tùy chọn. Response trả `{session_id, results}`; từng result giữ nguyên
+`student_id` và bọc `FrameResult`. Endpoint này dành cho tối ưu batch hoặc luồng
+mapping student từ backend, không thay thế contract multipart đơn frame hiện tại.
+
 ## Video
 
 `POST /v1/analyze/video` nhận JSON `{recording_id, video_url, duration}` và header

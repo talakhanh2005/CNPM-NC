@@ -9,7 +9,7 @@ import torch
 
 from openemotion.analysis.emotion_analyzer import EmotionAnalyzer
 from openemotion.api.adapter import batch_result, frame_result
-from openemotion.config import CLASS_NAMES
+from openemotion.config import CLASS_NAMES, LOW_EMOTION_CONFIDENCE
 from openemotion.detection.face_detector import create_face_detector
 from openemotion.model.emotion_model import load_model
 from openemotion.model.inference import predict_emotion
@@ -23,7 +23,12 @@ class AIService:
     Quản lý mô hình, Face Detector và phân phối tác vụ Realtime / Video Processing.
     """
 
-    def __init__(self, model_path: str, device: Union[str, torch.device] = "cpu"):
+    def __init__(
+        self,
+        model_path: str,
+        device: Union[str, torch.device] = "cpu",
+        low_confidence_threshold: float = LOW_EMOTION_CONFIDENCE,
+    ):
         if isinstance(device, str):
             self.device = torch.device(device)
         else:
@@ -46,8 +51,20 @@ class AIService:
         # Serialize individual detector/model operations while allowing realtime
         # requests to run between sampled video frames.
         inference_lock = RLock()
-        self.realtime_processor = RealtimeProcessor(self.model, self.detector, self.device, inference_lock)
-        self.video_processor = VideoProcessor(self.model, self.detector, self.device, inference_lock)
+        self.realtime_processor = RealtimeProcessor(
+            self.model,
+            self.detector,
+            self.device,
+            inference_lock,
+            low_confidence_threshold,
+        )
+        self.video_processor = VideoProcessor(
+            self.model,
+            self.detector,
+            self.device,
+            inference_lock,
+            low_confidence_threshold,
+        )
 
     def analyze_frame(self, frame: bytes, frame_id: str, timestamp: datetime):
         image = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
@@ -55,6 +72,22 @@ class AIService:
             "frame_id": frame_id, "timestamp": timestamp, "image": image,
         })
         return frame_result(raw, frame_id, timestamp)
+
+    def analyze_frame_batch(self, frames: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        results = []
+        for frame in frames:
+            result = self.analyze_frame(
+                frame["image"],
+                frame["frame_id"],
+                frame["timestamp"],
+            )
+            results.append(
+                {
+                    "student_id": frame.get("student_id"),
+                    "result": result,
+                }
+            )
+        return results
 
     def analyze_video(self, video_path: str, duration: float, deadline: float | None = None):
         raw = self.video_processor.process_video(video_path, deadline=deadline)

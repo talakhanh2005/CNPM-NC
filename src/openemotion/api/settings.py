@@ -19,3 +19,4 @@ class APISettings(BaseSettings):
     max_video_seconds: float = Field(default=7200, gt=0)
     processing_timeout_seconds: float = Field(default=110, gt=0)
     download_timeout_seconds: float = Field(default=30, gt=0)
+    low_confidence_threshold: float = Field(default=0.4, ge=0, le=1)
