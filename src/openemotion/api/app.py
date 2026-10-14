@@ -20,8 +20,13 @@ from starlette.concurrency import run_in_threadpool
 
 from openemotion.api.download import VideoDownloader
 from openemotion.api.jobs import JobStore
-from openemotion.api.schema import BatchResult, FrameResult
+from openemotion.api.schema import (
+    BatchResult,
+    FrameResult,
+    StudentVideoAnalysisResult,
+)
 from openemotion.api.settings import APISettings
+from openemotion.config import VIDEO_SAMPLE_FPS
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,17 @@ class VideoRequest(BaseModel):
     recording_id: str = Field(min_length=1, max_length=36)
     video_url: str = Field(min_length=1, max_length=16384, repr=False)
     duration: float = Field(ge=0, allow_inf_nan=False)
+
+
+class StudentVideoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recording_id: str = Field(min_length=1, max_length=36)
+    video_url: str = Field(min_length=1, max_length=16384, repr=False)
+    student_id: str | None = Field(default=None, max_length=36)
+    duration: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    sample_fps: float = Field(
+        default=VIDEO_SAMPLE_FPS, gt=0, le=5, allow_inf_nan=False
+    )
 
 
 class FrameBatchItem(BaseModel):
@@ -276,6 +292,52 @@ def create_app(settings=None, service=None, downloader=None):
         except Exception as exc:
             jobs.release(idempotency_key, owner)
             logger.warning("Video inference failed (%s)", type(exc).__name__)
+            if isinstance(exc, HTTPException):
+                raise
+            if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+                raise HTTPException(
+                    504, "Video analysis timed out; retry request"
+                ) from None
+            if isinstance(exc, httpx.HTTPError):
+                raise HTTPException(
+                    502, "Video download failed; retry request"
+                ) from None
+            if isinstance(exc, ValueError):
+                raise HTTPException(422, "Invalid video or analysis result") from None
+            raise HTTPException(500, "Video analysis failed; retry request") from None
+
+    @app.post(
+        "/v1/analyze/student-video",
+        response_model=StudentVideoAnalysisResult,
+        dependencies=[Depends(authorize)],
+    )
+    def analyze_student_video(data: StudentVideoRequest):
+        if data.duration is not None and data.duration > settings.max_video_seconds:
+            raise HTTPException(422, "Recording exceeds duration limit")
+        deadline = time.monotonic() + settings.processing_timeout_seconds
+        try:
+            with TemporaryDirectory(prefix="openemotion-") as directory:
+                path = app.state.downloader.download(
+                    data.video_url, Path(directory), deadline
+                )
+                result = StudentVideoAnalysisResult.model_validate(
+                    app.state.ai.analyze_student_video(
+                        str(path),
+                        recording_id=data.recording_id,
+                        student_id=data.student_id,
+                        duration=data.duration,
+                        sample_fps=data.sample_fps,
+                        deadline=deadline,
+                        max_duration=settings.max_video_seconds,
+                    )
+                )
+                if result.duration > settings.max_video_seconds:
+                    raise ValueError("Video duration exceeds configured limit")
+                if time.monotonic() > deadline:
+                    raise TimeoutError("Video analysis deadline exceeded")
+            return result
+        except Exception as exc:
+            logger.warning("Student video inference failed (%s)", type(exc).__name__)
             if isinstance(exc, HTTPException):
                 raise
             if isinstance(exc, (TimeoutError, httpx.TimeoutException)):

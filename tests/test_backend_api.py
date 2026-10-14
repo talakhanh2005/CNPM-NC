@@ -21,7 +21,7 @@ from openemotion.api.adapter import batch_result
 from openemotion.api.app import create_app
 from openemotion.api.download import VideoDownloader
 from openemotion.api.jobs import JobStore
-from openemotion.api.schema import EMOTIONS, BatchResult
+from openemotion.api.schema import EMOTIONS, BatchResult, StudentVideoAnalysisResult
 from openemotion.api.settings import APISettings
 from openemotion.config import CLASS_NAMES
 from openemotion.realtime.realtime_processor import RealtimeProcessor
@@ -131,6 +131,14 @@ def send_video(client, key="job-1", **fields):
         "/v1/analyze/video",
         headers={**AUTH, "Idempotency-Key": key},
         json={**VIDEO, **fields},
+    )
+
+
+def send_student_video(client, **fields):
+    return client.post(
+        "/v1/analyze/student-video",
+        headers=AUTH,
+        json={**VIDEO, "student_id": "student-1", **fields},
     )
 
 
@@ -267,6 +275,119 @@ def test_empty_video_analysis(api, service):
     assert response.status_code == 200
     assert response.json()["sample_counts"] == {}
     assert response.json()["timeline"] == []
+
+
+def test_student_video_groups_cloudinary_timestamps_by_emotion(api):
+    response = send_student_video(api.client)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["recording_id"] == "recording-1"
+    assert result["student_id"] == "student-1"
+    assert result["duration"] == 2.0
+    assert result["sample_counts"] == {"surprised": 2}
+    assert set(result["emotion_timestamps"]) == set(EMOTIONS)
+    assert [point["timestamp"] for point in result["timeline"]] == [0.0, 1.0]
+    assert all(
+        point["student_id"] == "student-1" and point["emotion"] == "surprised"
+        for point in result["timeline"]
+    )
+    assert [point["timestamp"] for point in result["emotion_timestamps"]["surprised"]] == [
+        0.0,
+        1.0,
+    ]
+    assert result["emotion_timestamps"]["happy"] == []
+
+
+def test_student_video_can_use_actual_video_duration(api):
+    response = send_student_video(api.client, duration=None)
+    assert response.status_code == 200, response.text
+    assert response.json()["duration"] == 2.0
+
+
+def test_student_video_response_normalizes_empty_emotion_groups():
+    result = StudentVideoAnalysisResult.model_validate(
+        {
+            "recording_id": "recording-1",
+            "duration": 0,
+            "sample_counts": {},
+            "timeline": [],
+            "emotion_timestamps": {},
+        }
+    )
+    assert result.model_dump()["emotion_timestamps"] == {
+        emotion: [] for emotion in EMOTIONS
+    }
+
+
+def test_student_video_rejects_inconsistent_response_payload(
+    api, service, monkeypatch
+):
+    invalid = {
+        "recording_id": "recording-1",
+        "student_id": "student-1",
+        "duration": 2.0,
+        "sample_counts": {"surprised": 1},
+        "timeline": [
+            {
+                "timestamp": 0.0,
+                "emotion": "surprised",
+                "confidence": 0.9,
+                "face_id": "1",
+                "bbox": [0, 0, 32, 32],
+                "uncertain": False,
+                "student_id": "student-1",
+            }
+        ],
+        # The old count-only validator accepted this mismatched timestamp.
+        "emotion_timestamps": {
+            "surprised": [
+                {
+                    "timestamp": 1.0,
+                    "confidence": 0.9,
+                    "face_id": "1",
+                    "bbox": [0, 0, 32, 32],
+                    "uncertain": False,
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(service, "analyze_student_video", lambda *args, **kwargs: invalid)
+    response = send_student_video(api.client)
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Invalid video or analysis result"}
+
+    invalid["timeline"][0]["timestamp"] = 3.0
+    invalid["emotion_timestamps"]["surprised"][0]["timestamp"] = 3.0
+    assert send_student_video(api.client).status_code == 422
+
+    invalid["timeline"][0]["timestamp"] = 0.0
+    invalid["emotion_timestamps"]["surprised"][0]["timestamp"] = 0.0
+    invalid["timeline"][0]["student_id"] = "student-2"
+    assert send_student_video(api.client).status_code == 422
+
+
+def test_student_video_request_validation_and_auth(api):
+    assert api.client.post("/v1/analyze/student-video", json=VIDEO).status_code == 401
+    assert send_student_video(api.client, duration=0).status_code == 422
+    assert send_student_video(api.client, duration=7201).status_code == 422
+    assert send_student_video(api.client, sample_fps=0).status_code == 422
+    assert send_student_video(api.client, sample_fps=5.1).status_code == 422
+    assert send_student_video(api.client, unexpected=True).status_code == 422
+
+
+def test_video_duration_is_rejected_before_inference(api, service, monkeypatch):
+    analyzed = False
+
+    def unexpected_inference(*args, **kwargs):
+        nonlocal analyzed
+        analyzed = True
+        return []
+
+    monkeypatch.setattr(service.video_processor, "_analyze_frame", unexpected_inference)
+    assert send_video(api.client, key="short-video", duration=0.5).status_code == 422
+    assert not analyzed
+    assert send_student_video(api.client, duration=1.0).status_code == 422
+    assert not analyzed
 
 
 def test_success_cached_across_app_restart_and_url_rotation(api, settings, service):

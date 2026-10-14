@@ -70,6 +70,12 @@ Video jobs are cached in SQLite by idempotency key after success. Replays with a
 rotated signed URL return the cached result; mismatched recording or duration is
 rejected.
 
+`/v1/analyze/student-video` là biến thể phục vụ video record của một học sinh.
+API này nhận Cloudinary URL, `recording_id`, `student_id` tùy chọn, `duration`
+tùy chọn và trả timeline đã gắn `student_id` cùng `emotion_timestamps` được group
+theo emotion. Contract `/v1/analyze/video` vẫn giữ nguyên để backend worker cũ
+không bị đổi schema.
+
 ## Model and preprocessing
 
 - Backbone: EfficientNet-B0 with a 7-class classifier head.

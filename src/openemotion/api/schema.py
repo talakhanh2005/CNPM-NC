@@ -107,3 +107,68 @@ class BatchResult(BaseModel):
         ):
             raise ValueError("Timeline must be a subset of the counted samples")
         return self
+
+
+class VideoEmotionTimestamp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    timestamp: float = Field(
+        ge=0, allow_inf_nan=False, description="Seconds from recording start"
+    )
+    confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
+    face_id: str | None = Field(default=None, max_length=128)
+    bbox: list[int] | None = Field(default=None, min_length=4, max_length=4)
+    uncertain: bool = False
+
+
+class VideoTimelinePoint(VideoEmotionTimestamp):
+    emotion: Emotion
+    student_id: str | None = Field(default=None, max_length=36)
+
+
+class StudentVideoAnalysisResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recording_id: str = Field(min_length=1, max_length=36)
+    student_id: str | None = Field(default=None, max_length=36)
+    duration: float = Field(ge=0, allow_inf_nan=False)
+    sample_counts: dict[
+        Emotion, Annotated[int, Field(strict=True, ge=0, le=1000000000)]
+    ] = Field(description="Counts per emotion across all analyzed face samples")
+    timeline: list[VideoTimelinePoint] = Field(default_factory=list, max_length=20000)
+    emotion_timestamps: dict[Emotion, list[VideoEmotionTimestamp]] = Field(
+        default_factory=dict,
+        description="Timeline grouped by emotion for quick FE/BE lookup",
+    )
+    summary: str = Field(default="", max_length=4000)
+    mock: bool = False
+
+    @model_validator(mode="after")
+    def grouped_timestamps_match_timeline(self):
+        # Keep a stable JSON template for consumers: all seven emotion buckets
+        # are always present, including empty buckets.
+        self.emotion_timestamps = {
+            emotion: self.emotion_timestamps.get(emotion, []) for emotion in EMOTIONS
+        }
+        timeline_counts = Counter(point.emotion for point in self.timeline)
+        if any(point.timestamp > self.duration for point in self.timeline):
+            raise ValueError("Timeline timestamp cannot exceed video duration")
+        if any(point.student_id != self.student_id for point in self.timeline):
+            raise ValueError("Timeline student_id must match the result student_id")
+        expected_groups = {emotion: [] for emotion in EMOTIONS}
+        for point in self.timeline:
+            expected_groups[point.emotion].append(
+                VideoEmotionTimestamp(
+                    timestamp=point.timestamp,
+                    confidence=point.confidence,
+                    face_id=point.face_id,
+                    bbox=point.bbox,
+                    uncertain=point.uncertain,
+                )
+            )
+        if self.emotion_timestamps != expected_groups:
+            raise ValueError("emotion_timestamps must group the returned timeline")
+        if any(
+            count > self.sample_counts.get(emotion, 0)
+            for emotion, count in timeline_counts.items()
+        ):
+            raise ValueError("Timeline must be a subset of the counted samples")
+        return self

@@ -38,6 +38,7 @@ class VideoProcessor:
         video_path: str,
         fps_sample: float = VIDEO_SAMPLE_FPS,
         deadline: float | None = None,
+        max_duration: float | None = None,
     ) -> dict[str, Any]:
         path = Path(video_path)
         if not path.is_file():
@@ -54,6 +55,10 @@ class VideoProcessor:
             }
         if not math.isfinite(fps_sample) or fps_sample <= 0:
             raise ValueError("fps_sample must be finite and positive")
+        if max_duration is not None and (
+            not math.isfinite(max_duration) or max_duration <= 0
+        ):
+            raise ValueError("max_duration must be finite and positive")
         cap = cv2.VideoCapture(str(path))
         try:
             if not cap.isOpened():
@@ -76,6 +81,12 @@ class VideoProcessor:
                     "message": "Invalid video metadata.",
                 }
             duration = total_frames / fps
+            if max_duration is not None and duration > max_duration:
+                return {
+                    "status": "failed",
+                    "error_code": "VIDEO_TOO_LONG",
+                    "message": "Video duration exceeds the configured limit.",
+                }
             frame_interval = max(1, round(fps / fps_sample))
             raw_results = []
             frame_idx = 0

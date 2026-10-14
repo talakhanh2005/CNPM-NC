@@ -92,6 +92,75 @@ không trả 202/job_id và không bọc envelope.
 - HTTP download lỗi: 502; timeout: 504; video/schema sai: 422; suy luận lỗi: 500.
   Response/log không chứa URL ký hay nội dung lỗi bên trong.
 
+### Video record theo học sinh
+
+`POST /v1/analyze/student-video` dùng khi backend đã biết video record thuộc về
+một học sinh và muốn lấy timeline trực tiếp theo cảm xúc. Endpoint vẫn tải video
+từ Cloudinary giống `/v1/analyze/video`, yêu cầu `Authorization: Bearer <AI_API_KEY>`
+và nhận JSON:
+
+```json
+{
+  "recording_id": "recording-1",
+  "student_id": "student-1",
+  "video_url": "https://api.cloudinary.com/v1_1/.../video/download?...",
+  "duration": 120.5,
+  "sample_fps": 1
+}
+```
+
+`student_id` và `duration` là tùy chọn; nếu không gửi `duration`, AI dùng duration
+đọc từ metadata video. Response trả:
+
+- `timeline`: danh sách mẫu theo thời gian, gồm `timestamp`, `emotion`,
+  `confidence`, `face_id`, `bbox`, `uncertain`, `student_id`.
+- `emotion_timestamps`: cùng timeline nhưng group theo từng emotion để backend/FE
+  dễ hiển thị các mốc thời gian của cảm xúc.
+- `sample_counts`: số mẫu phân loại theo từng emotion trên toàn bộ video.
+
+JSON response chuẩn (trả trực tiếp, không bọc `data`) có dạng:
+
+```json
+{
+  "recording_id": "recording-1",
+  "student_id": "student-1",
+  "duration": 120.5,
+  "sample_counts": {"happy": 1, "neutral": 1},
+  "timeline": [
+    {
+      "timestamp": 0.0,
+      "confidence": 0.91,
+      "face_id": "1",
+      "bbox": [120, 80, 160, 160],
+      "uncertain": false,
+      "emotion": "happy",
+      "student_id": "student-1"
+    }
+  ],
+  "emotion_timestamps": {
+    "happy": [{"timestamp": 0.0, "confidence": 0.91, "face_id": "1", "bbox": [120, 80, 160, 160], "uncertain": false}],
+    "neutral": [],
+    "sad": [],
+    "angry": [],
+    "surprised": [],
+    "fearful": [],
+    "disgusted": []
+  },
+  "summary": "2 classified samples.",
+  "mock": false
+}
+```
+
+`emotion_timestamps` luôn có đủ 7 key theo template trên, kể cả khi danh sách
+rỗng. Mỗi phần tử trong các nhóm phải khớp chính xác với phần tử tương ứng trong
+`timeline`; response sai contract bị từ chối thay vì trả dữ liệu không nhất quán.
+Giới hạn duration được kiểm tra từ metadata ngay sau khi mở video và trước khi
+chạy face detection/model inference.
+
+Endpoint này không cache theo `Idempotency-Key`; backend nên lưu kết quả nếu cần
+tránh phân tích lại cùng recording. Contract cũ `/v1/analyze/video` vẫn giữ nguyên
+để tương thích worker/backend hiện tại.
+
 ## Kiểm tra
 
 ```powershell

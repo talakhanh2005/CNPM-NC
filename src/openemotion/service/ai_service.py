@@ -8,8 +8,8 @@ import numpy as np
 import torch
 
 from openemotion.analysis.emotion_analyzer import EmotionAnalyzer
-from openemotion.api.adapter import batch_result, frame_result
-from openemotion.config import CLASS_NAMES, LOW_EMOTION_CONFIDENCE
+from openemotion.api.adapter import batch_result, frame_result, student_video_result
+from openemotion.config import CLASS_NAMES, LOW_EMOTION_CONFIDENCE, VIDEO_SAMPLE_FPS
 from openemotion.detection.face_detector import create_face_detector
 from openemotion.model.emotion_model import load_model
 from openemotion.model.inference import predict_emotion
@@ -90,10 +90,52 @@ class AIService:
         return results
 
     def analyze_video(self, video_path: str, duration: float, deadline: float | None = None):
-        raw = self.video_processor.process_video(video_path, deadline=deadline)
+        raw = self.video_processor.process_video(
+            video_path,
+            deadline=deadline,
+            # Container metadata can differ slightly from the backend duration.
+            max_duration=duration + 0.5,
+        )
         if raw.get("status") != "completed":
             raise ValueError("Video could not be decoded or analyzed")
         return batch_result(raw["raw_results"], duration)
+
+    def analyze_student_video(
+        self,
+        video_path: str,
+        recording_id: str,
+        student_id: str | None = None,
+        duration: float | None = None,
+        sample_fps: float = VIDEO_SAMPLE_FPS,
+        deadline: float | None = None,
+        max_duration: float | None = None,
+    ):
+        duration_limit = max_duration
+        if duration is not None:
+            request_limit = duration + 0.5
+            duration_limit = (
+                min(duration_limit, request_limit)
+                if duration_limit is not None
+                else request_limit
+            )
+        raw = self.video_processor.process_video(
+            video_path,
+            fps_sample=sample_fps,
+            deadline=deadline,
+            max_duration=duration_limit,
+        )
+        if raw.get("status") != "completed":
+            raise ValueError("Video could not be decoded or analyzed")
+        actual_duration = raw.get("duration", 0.0)
+        effective_duration = duration if duration is not None else actual_duration
+        if actual_duration > effective_duration + 0.5:
+            raise ValueError("Video duration exceeds request duration")
+        return student_video_result(
+            raw["raw_results"],
+            recording_id=recording_id,
+            duration=effective_duration,
+            student_id=student_id,
+        )
 
     def process_realtime_batch(self, session_id: str, frames: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Interface Realtime: Nhận batch frame từ Backend và trả về kết quả cảm xúc."""
