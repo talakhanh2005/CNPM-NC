@@ -9,8 +9,11 @@ OpenEmotion is a deep-learning project that detects faces from images or a live 
 ## Classroom backend API
 
 The HTTP service now implements the backend's `/v1/analyze/frame` and
-`/v1/analyze/video` contracts, including authentication, label mapping, signed
-video downloads and durable idempotency. See [backend integration and run instructions](docs/backend-integration.md).
+`/v1/analyze/video` contracts, plus `/v1/analyze/student-video` for grouped
+student timelines. It includes authentication, label mapping, signed video
+downloads and durable idempotency. See the
+[video emotion analysis README](docs/video-emotion-analysis/README.md) and
+[backend integration instructions](docs/backend-integration.md).
 
 ## Demo
 
