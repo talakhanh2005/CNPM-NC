@@ -218,7 +218,7 @@ Các biến môi trường chính dùng prefix `AI_`:
 | Biến | Mặc định | Mô tả |
 | --- | --- | --- |
 | `AI_API_KEY` | Không có | Bearer token dùng chung với backend |
-| `AI_MODEL_PATH` | `models/emotion_model_best.pth` | Checkpoint 7 lớp |
+| `AI_MODEL_PATH` | `models/openemotion_efficientnet_b0.pth` | Checkpoint 7 lớp được track trong Git |
 | `AI_DEVICE` | `cpu` | Thiết bị PyTorch, ví dụ `cpu` hoặc `cuda` |
 | `AI_CACHE_PATH` | `outputs/ai-jobs.sqlite3` | Cache idempotency bền vững |
 | `AI_DOWNLOAD_HOSTS` | Cloudinary API và CDN | JSON array chứa các host tải video được tin cậy |

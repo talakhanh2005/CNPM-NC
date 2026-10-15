@@ -20,7 +20,7 @@ IMG_SIZE = 224
 
 # --- Paths ---
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # OpenEmotion/
-DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "emotion_model_best.pth"
+DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "openemotion_efficientnet_b0.pth"
 EVALUATION_DIR = PROJECT_ROOT / "evaluation"
 RESULTS_DIR = PROJECT_ROOT / "results"
 

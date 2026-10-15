@@ -16,7 +16,7 @@ Copy-Item .env.example .env
 ```
 
 Đặt `AI_API_KEY` trong `.env` thành cùng giá trị với backend. Đặt trọng số
-EfficientNet-B0 đã huấn luyện tại `models/emotion_model_best.pth`, hoặc sửa
+EfficientNet-B0 đã huấn luyện tại `models/openemotion_efficientnet_b0.pth`, hoặc sửa
 `AI_MODEL_PATH` thành đường dẫn thực tế. Đây phải là state dict có đầu ra 7 lớp
 theo thứ tự `angry, disgust, fear, happy, neutral, sad, surprise`.
 API dừng khởi động nếu thiếu/sai trọng số; không tự tạo dự đoán ngẫu nhiên.

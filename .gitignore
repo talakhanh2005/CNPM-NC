@@ -27,10 +27,11 @@ env/
 !.env.example
 
 # ML artifacts
-*.pth
 *.pt
 *.onnx
 *.ckpt
+# Keep the low-accuracy experiment local; the selected runtime checkpoint is tracked.
+models/emotion_model_quick_3ep.pth
 
 # Data
 data/
