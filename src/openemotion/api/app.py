@@ -187,6 +187,8 @@ def create_app(settings=None, service=None, downloader=None):
             },
         )
 
+    model_version = (settings.model_version or settings.model_path.stem)[:64]
+
     def authorize(authorization: Annotated[str | None, Header()] = None):
         expected = "Bearer " + settings.api_key.get_secret_value()
         if not authorization or not secrets.compare_digest(
@@ -222,7 +224,7 @@ def create_app(settings=None, service=None, downloader=None):
             )
             if result.frame_id != frame_id or result.timestamp != timestamp:
                 raise ValueError("Mismatched frame metadata")
-            return result
+            return result.model_copy(update={"model_version": model_version})
         except Exception as exc:  # noqa: BLE001 - redact native/model errors at the HTTP boundary
             logger.warning("Frame inference failed (%s)", type(exc).__name__)
             raise HTTPException(500, "Frame inference failed") from None
@@ -287,6 +289,7 @@ def create_app(settings=None, service=None, downloader=None):
                     raise TimeoutError("Video analysis deadline exceeded")
                 if any(point.timestamp > data.duration for point in result.timeline):
                     raise ValueError("Video sample exceeds recording duration")
+            result = result.model_copy(update={"model_version": model_version})
             jobs.finish(idempotency_key, owner, result)
             return result
         except Exception as exc:

@@ -35,6 +35,8 @@ class FrameResult(BaseModel):
     face_id: str | None = Field(default=None, max_length=128)
     failure_reason: Literal["no_face", "ai_error"] | None = None
     mock: bool = False
+    # Contract v1 section 6.1: identifies the checkpoint that produced the result.
+    model_version: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def valid_detection(self):
@@ -97,6 +99,7 @@ class BatchResult(BaseModel):
     timeline: list[TimelinePoint] = Field(default_factory=list, max_length=20000)
     summary: str = Field(default="", max_length=4000)
     mock: bool = False
+    model_version: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def counts_valid(self):

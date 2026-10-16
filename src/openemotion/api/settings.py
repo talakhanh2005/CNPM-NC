@@ -12,6 +12,8 @@ class APISettings(BaseSettings):
     api_key: SecretStr = Field(min_length=1)
     model_path: Path = DEFAULT_MODEL_PATH
     device: str = "cpu"
+    # Reported in every result (contract v1). Empty = the checkpoint file name without extension.
+    model_version: str = Field(default="", max_length=64)
     cache_path: Path = Path("outputs/ai-jobs.sqlite3")
     download_hosts: list[str] = ["api.cloudinary.com", "res.cloudinary.com"]
     max_video_bytes: int = Field(default=90 * 1024 * 1024, ge=1024)
