@@ -123,6 +123,46 @@ def test_video_processor_unsupported_format(dummy_model, device, tmp_path):
     assert res["error_code"] == "UNSUPPORTED_FORMAT"
 
 
+def test_video_processor_decodes_webm_without_frame_count(
+    dummy_model, device, tmp_path, monkeypatch
+):
+    class StreamingCapture:
+        def __init__(self):
+            self.frames = [np.zeros((32, 32, 3), dtype=np.uint8) for _ in range(4)]
+            self.released = False
+
+        def isOpened(self):
+            return not self.released
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FPS:
+                return 2.0
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return -1.0
+            return 0.0
+
+        def read(self):
+            return (True, self.frames.pop(0)) if self.frames else (False, None)
+
+        def release(self):
+            self.released = True
+
+    path = tmp_path / "browser-recording.webm"
+    path.write_bytes(b"webm")
+    capture = StreamingCapture()
+    monkeypatch.setattr(
+        "openemotion.video.video_processor.cv2.VideoCapture", lambda _: capture
+    )
+    detector = create_face_detector()
+    processor = VideoProcessor(dummy_model, detector, device)
+
+    result = processor.process_video(str(path))
+
+    assert result["status"] == "completed"
+    assert result["duration"] == 2.0
+    assert capture.released
+
+
 # 5. Emotion Analyzer Tests
 def test_emotion_analyzer():
     raw_results = [

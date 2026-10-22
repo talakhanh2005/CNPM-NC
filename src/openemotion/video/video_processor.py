@@ -69,19 +69,23 @@ class VideoProcessor:
                 }
             fps = cap.get(cv2.CAP_PROP_FPS)
             total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-            if (
-                not math.isfinite(fps)
-                or not math.isfinite(total_frames)
-                or fps <= 0
-                or total_frames <= 0
-            ):
+            if not math.isfinite(fps) or fps <= 0:
                 return {
                     "status": "failed",
                     "error_code": "EMPTY_VIDEO",
                     "message": "Invalid video metadata.",
                 }
-            duration = total_frames / fps
-            if max_duration is not None and duration > max_duration:
+            # MediaRecorder WebM files often omit an indexed frame count. OpenCV
+            # then reports a negative sentinel even though frames decode normally,
+            # so only use the metadata duration when the count is trustworthy.
+            metadata_duration = (
+                total_frames / fps
+                if math.isfinite(total_frames) and total_frames > 0
+                else None
+            )
+            if max_duration is not None and (
+                metadata_duration is not None and metadata_duration > max_duration
+            ):
                 return {
                     "status": "failed",
                     "error_code": "VIDEO_TOO_LONG",
@@ -96,6 +100,12 @@ class VideoProcessor:
                 ret, frame = cap.read()
                 if not ret:
                     break
+                if max_duration is not None and frame_idx / fps > max_duration:
+                    return {
+                        "status": "failed",
+                        "error_code": "VIDEO_TOO_LONG",
+                        "message": "Video duration exceeds the configured limit.",
+                    }
                 if frame_idx % frame_interval == 0:
                     timestamp = frame_idx / fps
                     with self.inference_lock:
@@ -109,6 +119,7 @@ class VideoProcessor:
                     "error_code": "EMPTY_VIDEO",
                     "message": "No decodable video frames.",
                 }
+            duration = metadata_duration if metadata_duration is not None else frame_idx / fps
             return {
                 "status": "completed",
                 "duration": duration,
